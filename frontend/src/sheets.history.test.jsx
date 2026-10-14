@@ -88,4 +88,26 @@ describe('exercise history sheet', () => {
     const top = renderTop()
     expect(top.querySelectorAll('.list .item')).toHaveLength(1)
   })
+
+  it('draws the trend on the exercise page itself, with a volume curve beside the top set', () => {
+    exerciseDetailSheet(EXIDX[EX])
+    expect(renderTop().querySelector('.chart')).toBeNull()
+
+    useStore.setState(s => ({ S: { ...s.S, workouts: [
+      session(0, [{ w: 60, r: 5, done: true }, { w: 60, r: 5, done: true }]),
+      session(3, [{ w: 40, r: 8, done: true, phase: 'warmup' }, { w: 65, r: 8, done: true }, { w: 65, r: 8, done: true }]),
+    ] } }))
+    useUI.setState({ sheets: [] })
+    exerciseDetailSheet(EXIDX[EX])
+    const host = renderTop()
+    expect(host.textContent).toContain('Progress')
+    expect(host.textContent).toContain('2 sessions')
+    expect(host.querySelector('.chart svg')).toBeTruthy()
+    const vol = [...host.querySelectorAll('button')].find(b => b.textContent === 'Volume')
+    expect(vol).toBeTruthy()
+    act(() => { vol.click() })
+    // 65 × 16, the warm-up left out
+    expect(host.textContent).toContain('Most volume:')
+    expect(host.textContent).toContain('1,040 kg')
+  })
 })

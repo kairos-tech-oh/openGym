@@ -38,6 +38,18 @@ describe('exerciseHistory', () => {
     expect(h.points.map(p => [p.d, p.y])).toEqual([[iso(0), 60], [iso(2), 65]])
   })
 
+  it('plots volume per session, chronologically, without warm-ups or unloaded sessions', () => {
+    const S = { workouts: [
+      session(3, [warm(40, 5), work(65, 5), work(65, 4)]),
+      session(0, [work(60, 5), work(60, 5)]),
+      session(1, [work(0, 12)]),
+    ] }
+    const h = exerciseHistory(S, 'bench')
+    expect(h.volumePoints.map(p => [p.d, p.y])).toEqual([[iso(0), 600], [iso(3), 65 * 9]])
+    expect(h.volumePoints[0].t).toBe(T0)
+    expect(exerciseHistory({ workouts: [] }, 'bench').volumePoints).toEqual([])
+  })
+
   it('leaves warm-ups and unfinished rows out of every number', () => {
     const S = { workouts: [session(0, [warm(40, 8), work(60, 5), work(100, 5, false)])] }
     const h = exerciseHistory(S, 'bench')

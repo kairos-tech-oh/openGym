@@ -800,6 +800,7 @@ function ExerciseDetail({ ex, close }) {
   const st = useStore(s => s.S)
   const last = lastEntryFor(st, ex.id)
   const best = bestWeightFor(st, ex.id)
+  const hist = useMemo(() => exerciseHistory(st, ex.id), [st.workouts, ex.id])
   const fav = isFav(st, ex.id)
   const flipFav = () => {
     let on = false
@@ -823,6 +824,12 @@ function ExerciseDetail({ ex, close }) {
     </div>
     {ex.desc && <div className="exnote">{ex.desc}</div>}
     {best > 0 && <div className="small row" style={{ marginBottom: 6, gap: 5 }}><Icon name="trophy" style={{ fontSize: 14, color: 'var(--yellow)' }} />{t('Best:')} <b className="accent" style={{ whiteSpace: 'nowrap' }}>{fmtNum(best)} {st.unit}</b>{last ? ` · ${t('last')} ${fmtDate(last.d)}: ${last.sets.map(s => setLabel(ex.id, s, last.target, speedUnitOf(st))).join(', ')}` : ''}</div>}
+    {/* The trend over time right on the page; the History button below still opens every
+        session set by set. */}
+    {hist.points.length > 0 && <>
+      <h4 className="sec">{t('Progress')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t(hist.total === 1 ? '{0} session' : '{0} sessions', hist.total)}</span></h4>
+      <ExerciseTrend h={hist} />
+    </>}
     <Button variant="primary" icon="plus" style={{ margin: '10px 0 4px' }} onClick={() => addToRoutineSheet(ex)}>{t('Add to my plan')}</Button>
     {last && <Button icon="history" style={{ marginTop: 4 }} onClick={() => exerciseHistorySheet(ex.id)}>{t('History')}</Button>}
     {ex.custom && <div className="row" style={{ gap: 8, marginTop: 8 }}>
@@ -848,14 +855,39 @@ export const exerciseDetailSheet = ex => ui().openSheet(close => <ExerciseDetail
 // without leaving the workout for Stats. Derived once per log change — the sheet re-renders on
 // every store tick while a session runs, and LineChart drops its hover whenever `points`
 // changes identity, so a series rebuilt per render would lose the tooltip under your finger.
+// The trend of one exercise over time: its headline number per session, the estimated 1RM and
+// the volume (weight × reps) each session moved. Shared by the exercise page and the history
+// sheet, so both draw the same curves from the same derived history.
+function ExerciseTrend({ h }) {
+  const st = useStore(s => s.S)
+  const [curve, setCurve] = useState('top')
+  const unit = h.metric === 'weight' ? st.unit : h.metric === 'reps' ? t('reps') : h.metric === 'sec' ? 's' : t('min')
+  const opts = [{ value: 'top', label: h.metric === 'weight' ? t('Top set') : unit }]
+  // Only reps work with a load produces an estimate or a volume, so those toggles are absent
+  // for the rest.
+  if (h.e1rmPoints.length > 0 && h.metric === 'weight') opts.push({ value: 'e1rm', label: t('Est. 1RM') })
+  if (h.volumePoints.length > 0) opts.push({ value: 'vol', label: t('Volume') })
+  const on = opts.some(o => o.value === curve) ? curve : 'top'
+  const pts = on === 'e1rm' ? h.e1rmPoints : on === 'vol' ? h.volumePoints : h.points
+  const best = useMemo(() => Math.max(0, ...pts.map(p => p.y)), [pts])
+  const shownUnit = on === 'top' ? unit : st.unit
+  return <>
+    {opts.length > 1 && <Segmented className="seg-range" value={on} onChange={setCurve} options={opts} />}
+    <div className="chart" style={{ marginTop: 8 }}>
+      <LineChart points={pts} h={140} unit={shownUnit} color={on === 'vol' ? 'var(--acc)' : 'var(--blue)'} />
+    </div>
+    <div className="small row" style={{ margin: '6px 0 4px', gap: 5 }}>
+      <Icon name="trophy" style={{ fontSize: 14, color: 'var(--yellow)' }} />
+      {on === 'vol' ? t('Most volume:') : t('Best:')} <b className="accent">{on === 'vol' ? fmtVol(best, st.unit) : fmtNum(on === 'top' ? h.best : best) + ' ' + shownUnit}</b>
+    </div>
+  </>
+}
+
 function ExerciseHistory({ exId }) {
   const st = useStore(s => s.S)
   const ex = exOr(exId)
   const h = useMemo(() => exerciseHistory(st, exId), [st.workouts, exId])
-  const [curve, setCurve] = useState('top')
-  const onE1 = curve === 'e1rm' && h.e1rmPoints.length > 0
   const unit = h.metric === 'weight' ? st.unit : h.metric === 'reps' ? t('reps') : h.metric === 'sec' ? 's' : t('min')
-  const e1Best = useMemo(() => Math.max(0, ...h.e1rmPoints.map(p => p.y)), [h])
   if (!h.total) return <>
     <h3 className={exerciseNameClass(ex)}>{exerciseNameFor(ex)}</h3>
     <div className="empty"><div className="ico"><Icon name="history" /></div>{t('No sessions logged yet')}</div>
@@ -867,16 +899,7 @@ function ExerciseHistory({ exId }) {
   return <>
     <h3 className={exerciseNameClass(ex)} style={{ marginBottom: 2 }}>{exerciseNameFor(ex)}</h3>
     <div className="muted small" style={{ marginBottom: 10 }}>{t('Exercise history')} · {t(h.total === 1 ? '{0} session' : '{0} sessions', h.total)}</div>
-    {/* Only reps work with a load produces an estimate, so the toggle is absent for the rest. */}
-    {h.e1rmPoints.length > 0 && h.metric === 'weight' && <Segmented className="seg-range" value={curve} onChange={setCurve}
-      options={[{ value: 'top', label: t('Top set') }, { value: 'e1rm', label: t('Est. 1RM') }]} />}
-    <div className="chart" style={{ marginTop: 8 }}>
-      <LineChart points={onE1 ? h.e1rmPoints : h.points} h={140} unit={onE1 ? st.unit : unit} color="var(--blue)" />
-    </div>
-    <div className="small row" style={{ margin: '6px 0 4px', gap: 5 }}>
-      <Icon name="trophy" style={{ fontSize: 14, color: 'var(--yellow)' }} />
-      {t('Best:')} <b className="accent">{fmtNum(onE1 ? e1Best : h.best)} {onE1 ? st.unit : unit}</b>
-    </div>
+    <ExerciseTrend h={h} />
     <h4 className="sec">{h.sessions.length < h.total ? t('Last {0} sessions', h.sessions.length) : t('Sessions')}</h4>
     <div className="list">
       {h.sessions.map(s => <div key={s.id} className="item" style={{ alignItems: 'flex-start' }}>

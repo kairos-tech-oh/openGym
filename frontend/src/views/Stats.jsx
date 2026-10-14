@@ -16,6 +16,7 @@ import { fatigueOf, strengthOf, STRENGTH_FLOOR, LB_TO_KG } from '../lib/recovery
 import { strengthExerciseRowsForMuscle } from '../lib/strength-exercises.js'
 import { fatigueStateOf } from '../lib/recovery-view.js'
 import { e1rmSeries, best1RM } from '../lib/onerm.js'
+import { volumeSummary, volumeWeeks, volumeByExercise } from '../lib/volume.js'
 import {
   hasEffort, displayScale, scaleName, toScale, avgRir, effortSummary, effortWeeks,
   effortHistogram, isHardSet, HARD_RIR
@@ -286,6 +287,54 @@ function EffortCard({ S }) {
   </div>
 }
 
+// Volume moved — weight × reps over finished work sets (lib/volume.js). The headline totals,
+// the week-by-week trend and which exercises the volume came from, so "am I doing more than
+// last month" has an answer that a best-set curve cannot give.
+function VolumeCard({ S }) {
+  const [win, setWin] = useState(90)
+  const today = todayISO()
+  const ws = weekStartOf(S)
+  const sum = useMemo(() => volumeSummary(S, today, ws), [S.workouts, today, ws])
+  const weeks = useMemo(() => volumeWeeks(S, today, win, ws), [S.workouts, today, win, ws])
+  const pts = useMemo(() => weeks.map(w => ({ t: w.t, y: w.y, d: w.d, note: t(w.workouts === 1 ? '{0} workout' : '{0} workouts', w.workouts) })), [weeks])
+  const byEx = useMemo(() => volumeByExercise(S, today, win), [S.workouts, today, win])
+  const top = byEx.slice(0, 5)
+  const max = top.length ? top[0].volume : 0
+  const change = sum.lastWeek > 0 ? (sum.week - sum.lastWeek) / sum.lastWeek : null
+  const vol = v => fmtVol(Math.round(v), S.unit)
+
+  return <div className="card">
+    <h2>{t('Volume')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t('weight × reps')}</span></h2>
+    <div className="row between" style={{ alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+      <div>
+        <div className="stat-v">{vol(sum.week)}</div>
+        <div className="small dim">{t('This week')}{change != null && <span style={{ color: change >= 0 ? 'var(--acc)' : 'var(--orange)', marginInlineStart: 6 }}>{(change >= 0 ? '+' : '') + Math.round(change * 100) + '%'}</span>}</div>
+      </div>
+      <div style={{ textAlign: 'end' }}>
+        <div className="stat-v" style={{ fontSize: 18 }}>{vol(sum.lastWeek)}</div>
+        <div className="small dim">{t('Last week')}</div>
+      </div>
+    </div>
+    <div className="row between small" style={{ marginTop: 10, gap: 12 }}>
+      <span><span className="dim">{t('This month')}</span> <b>{vol(sum.month)}</b></span>
+      <span><span className="dim">{t('All time')}</span> <b>{vol(sum.all)}</b></span>
+    </div>
+    <Segmented className="seg-range" value={win} onChange={setWin}
+      options={[{ value: 30, label: '1M' }, { value: 90, label: '3M' }, { value: 365, label: '1Y' }, { value: 0, label: t('All') }]} />
+    <h4 className="sec" style={{ marginTop: 4 }}>{t('Week by week')}</h4>
+    <div className="chart"><LineChart points={pts} h={150} unit={S.unit} color="var(--acc)" /></div>
+    {top.length > 0 && <>
+      <h4 className="sec" style={{ marginTop: 12 }}>{t('Top exercises')}</h4>
+      {top.map(row => <div key={row.id} className="mrow" style={{ cursor: 'pointer' }} {...tappable(() => exerciseHistorySheet(row.id))}>
+        <span className={'nm' + (EXIDX[row.id] ? ' ' + exerciseNameClass(EXIDX[row.id]) : '')}>{EXIDX[row.id] ? exerciseNameFor(EXIDX[row.id]) : row.id}</span>
+        <span className="bar"><i style={{ width: Math.round(row.volume / max * 100) + '%' }} /></span>
+        <span className="v">{vol(row.volume)}</span>
+      </div>)}
+    </>}
+    <div className="small dim" style={{ marginTop: 8 }}>{t('Warm-ups, cardio and timed holds are left out.')}</div>
+  </div>
+}
+
 // Stats = the analytics hub: all charts, progress and history live here.
 export default function Stats() {
   const nav = useNavigate()
@@ -471,6 +520,7 @@ export default function Stats() {
       />
     </div>
 
+    {workouts.length > 0 && <VolumeCard S={S} />}
     {workouts.length > 0 && <MuscleBalance S={S} />}
     {workouts.length > 0 && <div className="card row between" style={{ alignItems: 'center', gap: 12 }}>
       <div style={{ minWidth: 0 }}><h2 style={{ margin: 0 }}>{t('Structural balance')}</h2>

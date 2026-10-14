@@ -45,7 +45,7 @@ export function exerciseHistory(S, exId, { limit = HISTORY_SESSIONS } = {}) {
   })
   logged.sort((a, b) => startOf(a.w) - startOf(b.w))
 
-  const empty = { mode: modeOf({ id: exId }), metric: 'weight', best: 0, prId: null, total: 0, sessions: [], points: [], e1rmPoints: [] }
+  const empty = { mode: modeOf({ id: exId }), metric: 'weight', best: 0, prId: null, total: 0, sessions: [], points: [], e1rmPoints: [], volumePoints: [] }
   if (!logged.length) return empty
 
   const mode = logged[logged.length - 1].mode
@@ -59,7 +59,7 @@ export function exerciseHistory(S, exId, { limit = HISTORY_SESSIONS } = {}) {
   }
 
   let best = 0, prId = null
-  const sessions = [], points = [], e1rmPoints = []
+  const sessions = [], points = [], e1rmPoints = [], volumePoints = []
   logged.forEach(({ w, en, mode: m, rows }) => {
     const same = m === mode
     const value = same ? valueOf({ en, rows }) : null
@@ -70,9 +70,12 @@ export function exerciseHistory(S, exId, { limit = HISTORY_SESSIONS } = {}) {
     if (value != null && value > best) { best = value; prId = w.id }
     if (value != null && value > 0) points.push({ t, d: w.d, y: value, e1rm })
     if (e1rm != null) e1rmPoints.push({ t, d: w.d, y: e1rm })
+    const volume = m === 'reps' ? entryVolume(rows) : null
+    // Weight × reps of the session's work sets — the trend a top-set line misses when the
+    // weight holds and the reps or sets grow. Unloaded sessions have none to plot.
+    if (volume > 0) volumePoints.push({ t, d: w.d, y: volume })
     sessions.push({
-      id: w.id, d: w.d, t, mode: m, target: en.target || null, sets: rows, value, e1rm,
-      volume: m === 'reps' ? entryVolume(rows) : null,
+      id: w.id, d: w.d, t, mode: m, target: en.target || null, sets: rows, value, e1rm, volume,
     })
   })
   // The "first reached" rule only holds for records above zero: a bodyweight session with
@@ -82,7 +85,7 @@ export function exerciseHistory(S, exId, { limit = HISTORY_SESSIONS } = {}) {
   return {
     mode, metric, best, prId, total: sessions.length,
     sessions: sessions.slice(-limit).reverse().map(s => ({ ...s, pr: s.id === prId })),
-    points, e1rmPoints,
+    points, e1rmPoints, volumePoints,
   }
 }
 
